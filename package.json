@@ -1,0 +1,31 @@
+{
+  "name": "youtubeplaylistdownloader",
+  "version": "1.0.0",
+  "description": "Downloads YouTube Playlists! :)",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "npm run lint",
+    "lint": "eslint ./src *.js",
+    "lint:fix": "eslint ./src *.js --fix"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FireController1847/youtube-playlist-downloader.git"
+  },
+  "author": "FireController1847",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/FireController1847/youtube-playlist-downloader/issues"
+  },
+  "homepage": "https://github.com/FireController1847/youtube-playlist-downloader#readme",
+  "dependencies": {
+    "ffmetadata": "^1.5.0",
+    "snekfetch": "^3.6.4",
+    "youtube-dl": "^1.12.2",
+    "youtube-playlist-info": "^1.1.2",
+    "ytdl-core": "^0.20.1"
+  }
+}
