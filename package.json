@@ -27,5 +27,8 @@
     "youtube-dl": "^1.12.2",
     "youtube-playlist-info": "^1.1.2",
     "ytdl-core": "^0.20.1"
+  },
+  "devDependencies": {
+    "eslint": "^4.18.0"
   }
 }
