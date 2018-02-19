@@ -144,7 +144,7 @@ async function downloadSongs(list, i = 0) {
     curr = null;
     clearInterval(loader);
     process.stdout.clearLine();
-    process.stdout.write(`\r✓ Download Complete "${list[i].title}"`);
+    console.log(`\r✓ Download Complete "${list[i].title}"`);
     return onEnd(list, i);
   });
 }
