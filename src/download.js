@@ -97,56 +97,62 @@ function writeMeta(path, info, list, i) {
 async function downloadSongs(list, i = 0) {
   list[i].title = list[i].title.replace(titleRemover, '');
   const path = `${output}/${list[i].title}.${format}`;
-  if (fs.existsSync(path)) {
-    if (forceUpdateMeta) {
-      console.log(`✗ Already Exists, But Forcing Metadata Update "${list[i].title}"`);
-      const info = await getVideoInfo(list[i].resourceId.videoId);
-      await writeMeta(path, info, list, i);
-    } else {
-      console.log(`✗ Already Exists, Skipping "${list[i].title}"`);
-    }
-    i++;
-    return downloadSongs(list, i);
-  }
-  const reqln = `\rℹ Requesting Video Info "${list[i].title}"`;
-  process.stdout.write(reqln);
-  const info = await getVideoInfo(list[i].resourceId.videoId);
-  const stream = yt(info.video_url);
   try {
-    stream.pipe(fs.createWriteStream(path));
-  } catch (e) {
-    stream.pipe(fs.createWriteStream(`${output}/${list[i].title.replace(/\W/g, '')}.${format}`));
-  }
-  process.stdout.clearLine();
-  let loader = twirlTimer(`Downloading 0% "${list[i].title}"...`);
-  curr = path;
-  stream.on('error', () => {
-    clearInterval(loader);
-    process.stdout.clearLine();
-    console.log(`\r✗ Failed To Download "${list[i].title}"`);
-    return onEnd(list, i);
-  });
-  let prevPer;
-  let per;
-  stream.on('progress', (chunk, totalDown, total) => {
-    per = totalDown / total;
-    per = (per * 100).toFixed(0);
-    if (prevPer != per) {
-      clearInterval(loader);
-      loader = twirlTimer(`Downloading ${per}% "${list[i].title}"...`);
+    if (fs.existsSync(path)) {
+      if (forceUpdateMeta) {
+        console.log(`✗ Already Exists, But Forcing Metadata Update "${list[i].title}"`);
+        const info = await getVideoInfo(list[i].resourceId.videoId);
+        await writeMeta(path, info, list, i);
+      } else {
+        console.log(`✗ Already Exists, Skipping "${list[i].title}"`);
+      }
+      i++;
+      return downloadSongs(list, i);
     }
-    prevPer = per;
-  });
-  stream.on('end', async () => {
+    const reqln = `\rℹ Requesting Video Info "${list[i].title}"`;
+    process.stdout.write(reqln);
+    const info = await getVideoInfo(list[i].resourceId.videoId);
+    const stream = yt(info.video_url);
+    try {
+      stream.pipe(fs.createWriteStream(path));
+    } catch (e) {
+      stream.pipe(fs.createWriteStream(`${output}/${list[i].title.replace(/\W/g, '')}.${format}`));
+    }
     process.stdout.clearLine();
-    process.stdout.write(`\rℹ Writing Metadata "${list[i].title}"`);
-    await writeMeta(path, info, list, i);
-    curr = null;
-    clearInterval(loader);
-    process.stdout.clearLine();
-    console.log(`\r✓ Download Complete "${list[i].title}"`);
+    let loader = twirlTimer(`Downloading 0% "${list[i].title}"...`);
+    curr = path;
+    stream.on('error', () => {
+      clearInterval(loader);
+      process.stdout.clearLine();
+      console.log(`\r✗ Failed To Download "${list[i].title}"`);
+      fs.unlinkSync(path);
+      return onEnd(list, i);
+    });
+    let prevPer;
+    let per;
+    stream.on('progress', (chunk, totalDown, total) => {
+      per = totalDown / total;
+      per = (per * 100).toFixed(0);
+      if (prevPer != per) {
+        clearInterval(loader);
+        loader = twirlTimer(`Downloading ${per}% "${list[i].title}"...`);
+      }
+      prevPer = per;
+    });
+    stream.on('end', async () => {
+      process.stdout.clearLine();
+      process.stdout.write(`\rℹ Writing Metadata "${list[i].title}"`);
+      await writeMeta(path, info, list, i);
+      curr = null;
+      clearInterval(loader);
+      process.stdout.clearLine();
+      console.log(`\r✓ Download Complete "${list[i].title}"`);
+      return onEnd(list, i);
+    });
+  } catch (e) {
+    if (fs.existsSync(path)) fs.unlinkSync(path);
     return onEnd(list, i);
-  });
+  }
 }
 async function getVideoInfo(vid) {
   const info = await yt.getInfo(vid);
