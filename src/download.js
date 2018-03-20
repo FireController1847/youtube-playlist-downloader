@@ -11,7 +11,7 @@ const yt = require('ytdl-core');
 
 let current;
 if (!fs.existsSync(options.output)) {
-  shell.mkdir(options.output);
+  shell.mkdir('-p', options.output);
 }
 
 let ttx = 0;
