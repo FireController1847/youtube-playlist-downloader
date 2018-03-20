@@ -24,8 +24,7 @@
   "dependencies": {
     "ffmetadata": "^1.5.0",
     "fluent-ffmpeg": "^2.1.2",
-    "snekfetch": "^3.6.4",
-    "youtube-dl": "^1.12.2",
+    "shelljs": "^0.8.1",
     "youtube-playlist-info": "^1.1.2",
     "ytdl-core": "github:fent/node-ytdl-core"
   },

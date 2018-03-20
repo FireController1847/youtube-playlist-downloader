@@ -2,210 +2,166 @@ const ffmd = require('ffmetadata');
 const ffmpeg = require('fluent-ffmpeg');
 const fs = require('fs');
 const { gapi } = require('./tokens.js');
-const snekfetch = require('snekfetch');
+const { options } = require('./options.js');
+options.output = options.output.replace('@album', options.metadata.album);
+const path = require('path');
+const shell = require('shelljs');
 const ypi = require('youtube-playlist-info');
 const yt = require('ytdl-core');
 
-/**
- * The YouTube Playlists's ID
- * @type {string}
- */
-const playlist = 'PLe8jmEHFkvsahDl5a1yepu60rWxKn8rbT';
-/**
- * The output file.
- * @type {string}
- */
-const output = './audio';
-/**
- * The temporary directory for thumbnail images.
- * @type {string}
- */
-const temp = './temp';
-/**
- * The audio output format.
- * Don't change this unless you know what you're doing.
- * @type {string}
- */
-const format = 'mp3';
-/**
- * Force a metadata update even if the file exists.
- * @type {boolean}
- */
-const forceUpdateMeta = true;
-
-/**
- * Contains information about the playlist to be attributed to each file.
- * @type {object}
- */
-const metadata = {
-  /**
-   * The playlist name.
-   */
-  album: 'Rocket League x Monstercat Vol. 1'
-};
-
-/**
- * A custom replacer for the title. Can be used to remove
- * spam like "[Monstercat Release]" from the titles.
- * Set to '' to disable.
- * @type {RegExp|string}
- */
-const titleRemover = / \[Monstercat Release\]/g;
-const titleRemover2 = /[^-]*- /g;
-
-/**
- * A custom matcher that will extract from the title, in
- * case the author is included in the title. For example,
- * in 'Slushii - LUV U NEED U', 'Slushii' is the author.
- * Set to '' to disable.
- * @type {RegExp|string}
- */
-const authorMatch = /[^-]*\w+/g;
-
-/**
- * The album cover filename.
- */
-const albumCover = 'cover.jpg';
-
-let curr;
-
-if (!fs.existsSync(output)) {
-  fs.mkdirSync(output);
-}
-if (!fs.existsSync(temp)) {
-  fs.mkdirSync(temp);
+let current;
+if (!fs.existsSync(options.output)) {
+  shell.mkdir(options.output);
 }
 
-let x = 0;
+let ttx = 0;
+let timer;
 function twirlTimer(msg) {
+  if (timer) clearInterval(timer);
   const p = ['\\', '|', '/', '-'];
-  return setInterval(() => {
-    process.stdout.write(`\r${p[x++]} ${msg}`);
-    x &= 3;
+  timer = setInterval(() => {
+    process.stdout.write(`\r${p[ttx++]} ${msg}`);
+    ttx &= 3;
   }, 250);
+  return timer;
 }
-function writeMeta(path, info, list, i) {
+function onEnd(videos, i) {
+  current = null;
+  i++;
+  if (i >= videos.length) return console.log('✓ Playlist Completed Downloading');
+  else return download(videos, i);
+}
+function onExit(opt, error) {
+  if (error && error.stack) console.log(error.stack);
+  if (opt.cleanup && current) {
+    try {
+      fs.unlinkSync(current);
+    } catch (e) {
+      return console.error(`\nThere was an internal error attempting to remove file ${current}.`, e);
+    }
+  }
+  if (opt.exit) process.exit();
+}
+async function download(videos, i = 0) {
+  videos[i].title = videos[i].title.replace(options.titleRemoverMain, '');
+  videos[i].titleMeta = videos[i].title;
+  videos[i].title = videos[i].title.replace(options.titleRemoverSecondary, '');
+  const file = path.join(__dirname, options.output, `${videos[i].title}.${options.format}`);
+  try {
+    // Info & Force Metadata
+    const exists = fs.existsSync(file);
+    if (exists && !options.forceMetaUpdate) {
+      console.log(`✗ Already Exists, Skipping "${videos[i].title}"`);
+      return onEnd(videos, i);
+    }
+    process.stdout.write(`\rℹ Requesting Video Info "${videos[i].title}"`);
+    videos[i].info = await yt.getInfo(videos[i].resourceId.videoId);
+    videos[i].info.title = videos[i].title;
+    if (exists) {
+      process.stdout.clearLine();
+      console.log(`\r✗ Already Exists, But Forcing Metadata Update "${videos[i].title}"`);
+      await updateMetadata(file, videos, i);
+      return onEnd(videos, i);
+    }
+    // Stream
+    const stream = yt(videos[i].info.video_url, { filter: 'audioonly' });
+    const ffstream = ffmpeg(stream).audioBitrate(128).save(file);
+    process.stdout.clearLine();
+    twirlTimer(`Downloading 0% "${videos[i].title}"...`);
+    current = file;
+    // Events
+    let prog;
+    let prevProg;
+    stream.on('progress', (chunk, totalDown, total) => {
+      prog = totalDown / total;
+      prog = (prog * 100).toFixed(0);
+      if (prevProg != prog) {
+        if (prog >= 100) {
+          process.stdout.clearLine();
+          twirlTimer(`Processing "${videos[i].title}"...`);
+        } else {
+          twirlTimer(`Downloading ${prog}% "${videos[i].title}"...`);
+        }
+      }
+      prevProg = prog;
+    });
+    ffstream.on('error', e => {
+      clearInterval(timer);
+      process.stdout.clearLine();
+      console.log(`\r✗ Failed To Download "${videos[i].title}"`);
+      console.error(e);
+      return onEnd(videos, i);
+    });
+    ffstream.on('end', async () => {
+      process.stdout.clearLine();
+      process.stdout.write(`\rℹ Writing Metadata "${videos[i].title}"`);
+      await updateMetadata(file, videos, i);
+      clearInterval(timer);
+      process.stdout.clearLine();
+      console.log(`\r✓ Download Complete "${videos[i].title}"`);
+      return onEnd(videos, i);
+    });
+  } catch (e) {
+    process.stdout.clearLine();
+    console.log(`\r✗ Error Downloading Video ${videos[i].title}`);
+    console.error(e);
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+    return onEnd(videos, i);
+  }
+}
+function updateMetadata(file, videos, i) {
   return new Promise((resolve, reject) => {
     let data = {
-      artist: authorMatch ? info.title.match(authorMatch)[0] : info.author.name,
-      album_artist: list[i].channelTitle,
-      title: info.title.replace(titleRemover2, ''),
-      track: `${i + 1}/${list.length}`,
-      date: (new Date(info.published)).getFullYear()
+      artist: options.authorMatch ? videos[i].title.match(options.authorMatch)[0] : videos[i].info.author.name,
+      album_artist: videos[i].channelTitle,
+      title: videos[i].title.replace(options.titleRemoverMeta, ''),
+      track: `${i + 1}/${videos.length}`,
+      date: (new Date(videos[i].info.published)).getFullYear()
     };
-    data = Object.assign({}, data, metadata);
-    const options = {};
-    ffmd.write(path, data, options, err => {
-      if (err) return reject(err);
-      if (albumCover) {
-        const tempPath = `${output}/${info.title}.temp.${format}`;
-        // eslint-disable-next-line max-len
-        const strm = ffmpeg(path).addOutputOptions('-i', albumCover, '-map', '0:0', '-map', '1:0', '-c', 'copy', '-id3v2_version', '3').save(tempPath);
-        strm.on('end', () => {
-          fs.unlinkSync(path);
-          fs.renameSync(tempPath, path);
-          resolve();
+    data = Object.assign({}, data, options.metadata);
+    const foptions = {};
+    ffmd.write(file, data, foptions, e => {
+      if (e) return reject(e);
+      if (options.cover) {
+        const temp = path.join(__dirname, options.output, `${videos[i].title}.temp.${options.format}`);
+        const stream = ffmpeg(file).addOutputOptions(
+          '-i', options.cover,
+          '-map', '0:0',
+          '-map', '1:0',
+          '-c', 'copy',
+          '-id3v2_version', '3'
+        ).save(temp);
+        stream.on('error', e => { // eslint-disable-line no-shadow
+          reject(e);
+        });
+        stream.on('end', () => {
+          try {
+            fs.unlinkSync(file);
+            fs.renameSync(temp, file);
+          } catch (e) { // eslint-disable-line no-shadow
+            return reject(e);
+          }
+          return resolve();
         });
       } else {
-        resolve();
+        return resolve();
       }
     });
   });
 }
-async function downloadSongs(list, i = 0) {
-  list[i].title = list[i].title.replace(titleRemover, '');
-  // list[i].title = list[i].title.replace(titleRemover2, '');
-  const path = `${output}/${list[i].title.replace(titleRemover2, '')}.${format}`;
-  try {
-    if (fs.existsSync(path)) {
-      if (forceUpdateMeta) {
-        console.log(`✗ Already Exists, But Forcing Metadata Update "${list[i].title}"`);
-        const info = await getVideoInfo(list[i].resourceId.videoId);
-        await writeMeta(path, info, list, i);
-      } else {
-        console.log(`✗ Already Exists, Skipping "${list[i].title}"`);
-      }
-      i++;
-      return downloadSongs(list, i);
-    }
-    const reqln = `\rℹ Requesting Video Info "${list[i].title.replace(titleRemover2, '')}"`;
-    process.stdout.write(reqln);
-    const info = await getVideoInfo(list[i].resourceId.videoId);
-    const stream = yt(info.video_url);
-    const ffstream = ffmpeg(stream).audioBitrate(128).save(path);
-    process.stdout.clearLine();
-    let loader = twirlTimer(`Downloading 0% "${list[i].title.replace(titleRemover2, '')}"...`);
-    curr = path;
-    ffstream.on('error', err => {
-      clearInterval(loader);
-      process.stdout.clearLine();
-      console.log(`\r✗ Failed To Download "${list[i].title.replace(titleRemover2, '')}"`, err);
-      fs.unlinkSync(path);
-      return onEnd(list, i);
-    });
-    let prevPer;
-    let per;
-    stream.on('progress', (chunk, totalDown, total) => {
-      per = totalDown / total;
-      per = (per * 100).toFixed(0);
-      if (prevPer != per) {
-        clearInterval(loader);
-        if (per >= 100) {
-          clearInterval(loader);
-          process.stdout.clearLine();
-          loader = twirlTimer(`Processing "${list[i].title.replace(titleRemover2, '')}"...`);
-        } else {
-          loader = twirlTimer(`Downloading ${per}% "${list[i].title.replace(titleRemover2, '')}"...`);
-        }
-      }
-      prevPer = per;
-    });
-    ffstream.on('end', async () => {
-      process.stdout.clearLine();
-      process.stdout.write(`\rℹ Writing Metadata "${list[i].title.replace(titleRemover2, '')}"`);
-      await writeMeta(path, info, list, i);
-      curr = null;
-      clearInterval(loader);
-      process.stdout.clearLine();
-      console.log(`\r✓ Download Complete "${list[i].title.replace(titleRemover2, '')}"`);
-      return onEnd(list, i);
-    });
-  } catch (e) {
-    if (fs.existsSync(path)) fs.unlinkSync(path);
-    return onEnd(list, i);
-  }
-}
-async function getVideoInfo(vid) {
-  const info = await yt.getInfo(vid);
-  try {
-    const newt = info.thumbnail_url.replace('default', 'maxresdefault');
-    const res = await snekfetch.get(newt);
-    info.thumbnail = res.status == 404 ? info.thumbnail_url.replace('default', 'hqdefault') : newt;
-  } catch (e) {
-    info.thumbnail = info.thumbnail_url.replace('default', 'mqdefault');
-  }
-  info.title = info.title.replace(titleRemover, '');
-  // info.title = info.title.replace(titleRemover2, '');
-  return info;
-}
-function onEnd(list, i) {
-  i++;
-  if (i >= list.length) return console.log('Completed All Downloads');
-  else return downloadSongs(list, i);
-}
-function onExit(options, error) {
-  if (error && error.stack) console.log(error.stack);
-  if (options.cleanup && curr) fs.unlinkSync(curr);
-  if (options.exit) process.exit();
-}
-
 (async () => {
-  console.log('Getting Playlist Info...');
-  const videos = await ypi(gapi, playlist);
-  console.log(`Downloading ${videos.length} video${videos.length == 1 ? '' : 's'}`);
-  downloadSongs(videos);
+  console.log('ℹ Requesting Playlist Info');
+  let videos;
+  try {
+    videos = await ypi(gapi, options.playlist);
+  } catch (e) {
+    return console.error('✗ Error Requesting Playlist Info', e);
+  }
+  console.log(`ℹ Found ${videos.length} video${videos.length == 1 ? '' : 's'}.`);
+  return download(videos).catch(e => {
+    console.error('✗ Error Downloading Playlist', e);
+  });
 })();
-
 process.on('unhandledRejection', console.error);
 process.on('exit', onExit.bind(null, { cleanup: true }));
 process.on('SIGINT', onExit.bind(null, { exit: true }));
