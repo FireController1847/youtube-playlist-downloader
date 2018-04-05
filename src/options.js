@@ -16,7 +16,8 @@ module.exports.options = {
   forceMetaUpdate: false,
   /**
    * Contains information about the playlist to be attributed
-   * to each file.
+   * to each file. Add a new property to override other
+   * properties.
    * @type {object}
    */
   metadata: {
@@ -63,6 +64,13 @@ module.exports.options = {
    * @type {RegExp|string}
    */
   authorMatch: /[^-]*\w+/g,
+  /**
+   * The download speed. How much of the video to buffer
+   * before downloading the stream in mbps.
+   * 10mbps is the default.
+   * @type {number}
+   */
+  downloadSpeed: 10,
   /** REDICULOUSLY ADVANCED */
   /**
    * The audio output format.

@@ -16,11 +16,11 @@ if (!fs.existsSync(options.output)) {
 
 let ttx = 0;
 let timer;
-function twirlTimer(msg) {
+function twirlTimer(msg, b4 = '') {
   if (timer) clearInterval(timer);
   const p = ['\\', '|', '/', '-'];
   timer = setInterval(() => {
-    process.stdout.write(`\r${p[ttx++]} ${msg}`);
+    process.stdout.write(`\r${b4}${p[ttx++]} ${msg}`);
     ttx &= 3;
   }, 250);
   return timer;
@@ -51,23 +51,26 @@ async function download(videos, i = 0) {
     // Info & Force Metadata
     const exists = fs.existsSync(file);
     if (exists && !options.forceMetaUpdate) {
-      console.log(`✗ Already Exists, Skipping "${videos[i].title}"`);
+      console.log(`${i} - ✗ Already Exists, Skipping "${videos[i].title}"`);
       return onEnd(videos, i);
     }
-    process.stdout.write(`\rℹ Requesting Video Info "${videos[i].title}"`);
+    process.stdout.write(`\r${i} - ℹ Requesting Video Info "${videos[i].title}"`);
     videos[i].info = await yt.getInfo(videos[i].resourceId.videoId);
     videos[i].info.title = videos[i].title;
     if (exists) {
       process.stdout.clearLine();
-      console.log(`\r✗ Already Exists, But Forcing Metadata Update "${videos[i].title}"`);
+      console.log(`\r${i} - ✗ Already Exists, But Forcing Metadata Update "${videos[i].title}"`);
       await updateMetadata(file, videos, i);
       return onEnd(videos, i);
     }
     // Stream
-    const stream = yt(videos[i].info.video_url, { filter: 'audioonly' });
+    const stream = yt(videos[i].info.video_url, {
+      quality: 'highestaudio',
+      highWaterMark: 1024 * 1024 * options.downloadSpeed
+    });
     const ffstream = ffmpeg(stream).audioBitrate(128).save(file);
     process.stdout.clearLine();
-    twirlTimer(`Downloading 0% "${videos[i].title}"...`);
+    twirlTimer(`Downloading 0% "${videos[i].title}"...`, `${i} - `);
     current = file;
     // Events
     let prog;
@@ -78,9 +81,9 @@ async function download(videos, i = 0) {
       if (prevProg != prog) {
         if (prog >= 100) {
           process.stdout.clearLine();
-          twirlTimer(`Processing "${videos[i].title}"...`);
+          twirlTimer(`Processing "${videos[i].title}"...`, `${i} - `);
         } else {
-          twirlTimer(`Downloading ${prog}% "${videos[i].title}"...`);
+          twirlTimer(`Downloading ${prog}% "${videos[i].title}"...`, `${i} - `);
         }
       }
       prevProg = prog;
@@ -88,22 +91,22 @@ async function download(videos, i = 0) {
     ffstream.on('error', e => {
       clearInterval(timer);
       process.stdout.clearLine();
-      console.log(`\r✗ Failed To Download "${videos[i].title}"`);
+      console.log(`\r${i} - ✗ Failed To Download "${videos[i].title}"`);
       console.error(e);
       return onEnd(videos, i);
     });
     ffstream.on('end', async () => {
       process.stdout.clearLine();
-      process.stdout.write(`\rℹ Writing Metadata "${videos[i].title}"`);
+      process.stdout.write(`\${i} - rℹ Writing Metadata "${videos[i].title}"`);
       await updateMetadata(file, videos, i);
       clearInterval(timer);
       process.stdout.clearLine();
-      console.log(`\r✓ Download Complete "${videos[i].title}"`);
+      console.log(`\r${i} - ✓ Download Complete "${videos[i].title}"`);
       return onEnd(videos, i);
     });
   } catch (e) {
     process.stdout.clearLine();
-    console.log(`\r✗ Error Downloading Video ${videos[i].title}`);
+    console.log(`\r${i} - ✗ Error Downloading Video ${videos[i].title}`);
     console.error(e);
     if (fs.existsSync(file)) fs.unlinkSync(file);
     return onEnd(videos, i);
