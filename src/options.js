@@ -3,7 +3,7 @@ module.exports.options = {
    * The YouTube Playlists's ID
    * @type {string}
    */
-  playlist: 'PLe8jmEHFkvsahDl5a1yepu60rWxKn8rbT',
+  playlist: 'PLe8jmEHFkvsYuYm1x5t3RZ5WyGrfF8bkg',
   /**
    * The output file. Use @album to use the album cover.
    * @type {string}
@@ -25,7 +25,7 @@ module.exports.options = {
      * The album name (most common the playlist name).
      * @type {string}
      */
-    album: 'Rocket League x Monstercat Vol. 1'
+    album: 'Rocket League x Monstercat Vol. 2'
   },
   /**
    * The file name for the album cover. You must download an image
