@@ -2,6 +2,7 @@
 Downloads YouTube Playlists! :)
 
 # How to Use
+### You must have FFMPEG installed to use this downloader.
 1. Clone this repository into a folder.
 2. Open a terminal and cd into the `src` folder.
 3. Open options.js and edit the stuff you want to edit. Each item comes with a description and the types it needs to be.
