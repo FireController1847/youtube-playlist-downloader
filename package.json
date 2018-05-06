@@ -1,6 +1,6 @@
 {
   "name": "youtubeplaylistdownloader",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Downloads YouTube Playlists! :)",
   "main": "index.js",
   "directories": {
