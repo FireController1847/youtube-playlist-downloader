@@ -1,19 +1,22 @@
-module.exports.options = {
+const options = {
   /**
-   * The YouTube Playlists's ID
+   * The YouTube Playlist ID
    * @type {string}
    */
-  playlist: 'PLe8jmEHFkvsYuYm1x5t3RZ5WyGrfF8bkg',
+  plid: 'PLe8jmEHFkvsYuYm1x5t3RZ5WyGrfF8bkg',
+
   /**
-   * The output file. Use @album to use the album cover.
+   * The output file. Use "@album" to use the album cover.
    * @type {string}
    */
-  output: './audio/@album/',
+  output: './audio/@album',
+
   /**
    * Force a metadata update even if the file exists.
    * @type {boolean}
    */
-  forceMetaUpdate: false,
+  updateMetadata: false,
+
   /**
    * Contains information about the playlist to be attributed
    * to each file. Add a new property to override other
@@ -21,63 +24,94 @@ module.exports.options = {
    * @type {object}
    */
   metadata: {
+
     /**
-     * The album name (most common the playlist name).
-     * @type {string}
+     * The album name. If set to `null` will be the playlist title.
+     * @type {null|string}
      */
-    album: 'Rocket League x Monstercat Vol. 2'
+    album: 'Rocket League x Monstercat Vol. 2',
+
+    /**
+     * The album artist. If set to `null`, YTPLDL will automatically
+     * set this value. When setting the value, YTPLDL will detect if
+     * there are multiple artists. If there are, it will be assigned
+     * 'Various Artists'. Otherwise, it will be assigned the name of
+     * the artist of each song.
+     * @type {null|string}
+     */
+    album_artist: null
+
   },
+
   /**
-   * The file name for the album cover. You must download an image
-   * and put it in the 'src' folder to be able to use this.
-   * Set to '' to disable.
+   * The location of the album cover for this playlist. You must
+   * download an image and put it in any directory under the 'src'
+   * folder. Similar to the output property.
+   * Set to '' to have no album cover.
    */
-  cover: 'cover.jpg',
-  /** ADVANCED */
+  cover: './cover.png',
+
+  /** ********* ADVANCED ********** **/
+
   /**
-   * A custom replacer for the title. Can be used to remove
-   * spam like "[Monstercat Release]" from the titles.
-   * Set to '' to disable.
-   * @type {RegExp|string}
+   * Replacers for the title of songs. This is an array of different
+   * RegExp's or strings to replace from the title in order from first
+   * to last. Every modification from the previous title remover will
+   * effect the next. Useful to remove crap like "[Monstercat Release]"
+   * from titles.
+   * Set to [] to disable.
+   * @type {Array<RegExp|string>}
    */
-  titleRemoverMain: / \[Monstercat Release\]/g,
+  titleRemovers: [
+    / \[Monstercat Release\]/g
+  ],
+
   /**
-   * A secondary replacer for the title.
-   * Set to '' to disable.
-   * @type {RegExp|string}
-   */
-  titleRemoverSecondary: '',
-  /**
-   * Similar to the title removers, this will remove data from
-   * the metadata ONLY. Useful if you need to use the option below to
-   * match an author, and then remove it in the metadata and file name.
+   * Similar to the title removers, only this will remove data from the
+   * metadata ONLY. Useful if you need to use the next option to match
+   * and author, and then remove it in the metadata and file name.
    * Anything removed here will still be shown to the authorMatcher.
+   * Set to '' to disable.
    * @type {RegExp|string}
    */
   titleRemoverMeta: /[^-]*- /g,
+
   /**
-   * A custom matcher that will extract from the title, in
-   * case the author is included in the title. For example,
-   * in 'Slushii - LUV U NEED U', 'Slushii' is the author.
+   * A custom matcher that will extract from the title, in case the author
+   * is included in the title. For example, in 'Slushii - LUV U NEED U',
+   * 'Slushii' is the author.
    * Set to '' to disable.
-   * When disabled, the author must be provided in the metadata object above.
+   * When disabled, the author must be provided in the metadata option.
    * @type {RegExp|string}
    */
   authorMatch: /[^-]*\w+/g,
+
+  /** ********* REDICULOUSLY ADVANCED ********** **/
+
   /**
-   * The download speed. How much of the video to buffer
-   * before downloading the stream in mbps.
+   * The download speed in MPBS. This seems to NOT be what most would
+   * consider 'download speed', so I don't suggest changing this unless
+   * you know what you're doing.
    * 10mbps is the default.
    * @type {number}
    */
   downloadSpeed: 10,
-  /** REDICULOUSLY ADVANCED */
+
   /**
-   * The audio output format.
-   * This is hard coded, so do not chnage this unless you know
-   * which part of the code you'll need to change to make it
-   * work. 'mp3' is suggested at all times.
+   * The audio output format. This is hard coded, so do not change this
+   * unless you know which part of the code you'll need to change to
+   * make it work.
+   * mp3 is the default.
    * @type {string}
    */
-  format: 'mp3'
+  format: 'mp3',
+
+  /**
+   * Set to true to get debug information.
+   * @type {boolean}
+   */
+  debug: false
 };
+const path = require('path');
+options.output = path.resolve(options.output.replace('@album', options.metadata.album));
+module.exports = options;

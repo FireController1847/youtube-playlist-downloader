@@ -9,7 +9,8 @@
   "scripts": {
     "test": "npm run lint",
     "lint": "eslint ./src *.js",
-    "lint:fix": "eslint ./src *.js --fix"
+    "lint:fix": "eslint ./src *.js --fix",
+    "genpackage": "npm install && yarn install"
   },
   "repository": {
     "type": "git",
@@ -24,11 +25,12 @@
   "dependencies": {
     "ffmetadata": "^1.5.0",
     "fluent-ffmpeg": "^2.1.2",
-    "shelljs": "^0.8.1",
+    "mkdirp": "^0.5.1",
+    "ora": "^2.1.0",
     "youtube-playlist-info": "^1.1.2",
-    "ytdl-core": "github:fent/node-ytdl-core"
+    "ytdl-core": "^0.20.4"
   },
   "devDependencies": {
-    "eslint": "^4.18.0"
+    "eslint": "^4.19.1"
   }
 }

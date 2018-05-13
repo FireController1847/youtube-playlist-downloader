@@ -2,172 +2,172 @@ const ffmd = require('ffmetadata');
 const ffmpeg = require('fluent-ffmpeg');
 const fs = require('fs');
 const { gapi } = require('./tokens.js');
-const { options } = require('./options.js');
-options.output = options.output.replace('@album', options.metadata.album);
+const mkdirp = require('mkdirp');
+const options = require('./options.js');
+const ora = require('ora')({
+  spinner: {
+    interval: 80,
+    frames: [
+      '⠋', '⠙', '⠹', '⠸', '⠼',
+      '⠴', '⠦', '⠧', '⠇', '⠏'
+    ]
+  }
+});
 const path = require('path');
-const shell = require('shelljs');
+const Playlist = require('./structures/Playlist.js');
+const Video = require('./structures/Video.js');
 const ypi = require('youtube-playlist-info');
 const yt = require('ytdl-core');
 
-let current;
-if (!fs.existsSync(options.output)) {
-  shell.mkdir('-p', options.output);
-}
+console.debug = function() {
+  if (options.debug) console.log.bind(console, '[Debug]')(...arguments);
+};
 
-let ttx = 0;
-let timer;
-function twirlTimer(msg, b4 = '') {
-  if (timer) clearInterval(timer);
-  const p = ['\\', '|', '/', '-'];
-  timer = setInterval(() => {
-    process.stdout.write(`\r${b4}${p[ttx++]} ${msg}`);
-    ttx &= 3;
-  }, 250);
-  return timer;
-}
-function onEnd(videos, i) {
-  current = null;
-  i++;
-  if (i >= videos.length) return console.log('✓ Playlist Completed Downloading');
-  else return download(videos, i);
-}
-function onExit(opt, error) {
-  if (error && error.stack) console.log(error.stack);
-  if (opt.cleanup && current) {
-    try {
-      fs.unlinkSync(current);
-    } catch (e) {
-      return console.error(`\nThere was an internal error attempting to remove file ${current}.`, e);
-    }
+(async () => {
+  if (!fs.existsSync(options.output)) {
+    console.debug(`Output file does not exist. Creating at ${options.output}.`);
+    mkdirp.sync(options.output);
+  } else {
+    console.debug(`Output file exists at ${options.output}.`);
   }
-  if (opt.exit) process.exit();
-}
-async function download(videos, i = 0) {
-  videos[i].title = videos[i].title.replace(options.titleRemoverMain, '');
-  videos[i].titleMeta = videos[i].title;
-  videos[i].title = videos[i].title.replace(options.titleRemoverSecondary, '');
-  const file = path.join(__dirname, options.output, `${videos[i].title}.${options.format}`);
+  // Request Playlist Info
+  console.debug(`Requesting for Playlist ID ${options.plid}`);
+  ora.start('Requesting Playlist Info');
+  let videos;
   try {
-    // Info & Force Metadata
-    const exists = fs.existsSync(file);
-    if (exists && !options.forceMetaUpdate) {
-      console.log(`${i} - ✗ Already Exists, Skipping "${videos[i].title}"`);
-      return onEnd(videos, i);
-    }
-    process.stdout.write(`\r${i} - ℹ Requesting Video Info "${videos[i].title}"`);
-    videos[i].info = await yt.getInfo(videos[i].resourceId.videoId);
-    videos[i].info.title = videos[i].title;
-    if (exists) {
-      process.stdout.clearLine();
-      console.log(`\r${i} - ✗ Already Exists, But Forcing Metadata Update "${videos[i].title}"`);
-      await updateMetadata(file, videos, i);
-      return onEnd(videos, i);
-    }
-    // Stream
-    const stream = yt(videos[i].info.video_url, {
-      quality: 'highestaudio',
-      highWaterMark: 1024 * 1024 * options.downloadSpeed
+    videos = await ypi(gapi, options.plid);
+  } catch (e) {
+    return ora.fail(`Playlist Request Failed: ${e.stack}`);
+  }
+  ora.succeed('Playlist Request Success');
+  const playlist = new Playlist(videos);
+  ora.info(`Found ${videos.length} video${videos.length == 1 ? '' : 's'} in the playlist.`);
+
+  // Download Videos
+  for (let i = 0; i < playlist.videos.length; i++) {
+    const video = playlist.videos[i];
+
+    // Modify The Video
+    /** The modified title. */
+    video.mTitle = video.title;
+    options.titleRemovers.forEach(tr => {
+      video.mTitle = video.mTitle.replace(tr, '');
     });
-    const ffstream = ffmpeg(stream).audioBitrate(128).save(file);
-    process.stdout.clearLine();
-    twirlTimer(`Downloading 0% "${videos[i].title}"...`, `${i} - `);
-    current = file;
-    // Events
-    let prog;
-    let prevProg;
-    stream.on('progress', (chunk, totalDown, total) => {
-      prog = totalDown / total;
-      prog = (prog * 100).toFixed(0);
-      if (prevProg != prog) {
-        if (prog >= 100) {
-          process.stdout.clearLine();
-          twirlTimer(`Processing "${videos[i].title}"...`, `${i} - `);
-        } else {
-          twirlTimer(`Downloading ${prog}% "${videos[i].title}"...`, `${i} - `);
-        }
+    /** The title that will be used for metadata info. */
+    video.metaTitle = video.mTitle.replace(options.titleRemoverMeta, '');
+    /** The matched author from the modified title. */
+    video.mAuthor = video.mTitle.match(options.authorMatch);
+    console.debug(`Title: ${video.title}`);
+    console.debug(`Modifed Title: ${video.mTitle}`);
+    console.debug(`Metadata Title: ${video.metaTitle}`);
+    console.debug(`Matched Author: ${video.mAuthor}`);
+
+    // Now We Do It
+    let res;
+    try {
+      res = await download(playlist, video);
+    } catch (e) {
+      ora.fail(`There was an Internal ${e.stack}`);
+    }
+
+    if (!res) ora.succeed(`${i + 1}/${playlist.videos.length} Download Complete for "${video.metaTitle}"`);
+    else if (res == 'already_exists') ora.fail(`${i + 1}/${playlist.videos.length} Already Exists, Skipping "${video.metaTitle}"`);
+    else if (res == 'already_exists_metadata') ora.succeed(`${i + 1}/${playlist.videos.length} Metadata Update Complete for "${video.metaTitle}"`);
+  }
+})();
+
+/**
+ * @param {Playlist} playlist
+ * @param {Video} video
+ */
+function download(playlist, video) {
+  return new Promise(async resolve => {
+    video.path = path.join(options.output, `${video.metaTitle}.${options.format}`);
+    video.tempPath = path.join(options.output, `${video.metaTitle}.temp.${options.format}`);
+    console.debug(`Video Path: ${video.path}`);
+
+    // Check for Metadata & Existing
+    if (fs.existsSync(video.path)) {
+      console.debug(`File Already Exists`);
+      if (options.updateMetadata) {
+        ora.fail(`Already Exists, But Forcing Metadata Update "${video.metaTitle}"`);
+        await metadata(playlist, video);
+        return resolve('already_exists_metadata');
+      } else {
+        return resolve('already_exists');
       }
-      prevProg = prog;
+    }
+
+    // Being Streams
+    const stream = yt(video.url, { quality: 'highestaudio', highWaterMark: options.downloadSpeed * 1024 * 1024 });
+    const ffstream = ffmpeg(stream).audioBitrate(128).save(video.path);
+
+    // Event Handling
+    let progress = 0;
+    ora.start(`Starting Download for "${video.metaTitle}"`);
+    stream.on('progress', (chunk, completed, total) => {
+      progress = completed / total;
+      progress = (progress * 100).toFixed(1);
+      ora.text = `${progress}% Downloading "${video.metaTitle}"...`;
+    });
+    stream.on('error', e => {
+      throw new Error(e);
     });
     ffstream.on('error', e => {
-      clearInterval(timer);
-      process.stdout.clearLine();
-      console.log(`\r${i} - ✗ Failed To Download "${videos[i].title}"`);
-      console.error(e);
-      return onEnd(videos, i);
+      throw new Error(e);
     });
     ffstream.on('end', async () => {
-      process.stdout.clearLine();
-      process.stdout.write(`\${i} - rℹ Writing Metadata "${videos[i].title}"`);
-      await updateMetadata(file, videos, i);
-      clearInterval(timer);
-      process.stdout.clearLine();
-      console.log(`\r${i} - ✓ Download Complete "${videos[i].title}"`);
-      return onEnd(videos, i);
+      await metadata(playlist, video);
+      return resolve();
     });
-  } catch (e) {
-    process.stdout.clearLine();
-    console.log(`\r${i} - ✗ Error Downloading Video ${videos[i].title}`);
-    console.error(e);
-    if (fs.existsSync(file)) fs.unlinkSync(file);
-    return onEnd(videos, i);
-  }
+  });
 }
-function updateMetadata(file, videos, i) {
+
+/**
+ * @param {Playlist} playlist
+ * @param {Video} video
+ */
+function metadata(playlist, video) {
   return new Promise((resolve, reject) => {
-    let data = {
-      artist: options.authorMatch ? videos[i].title.match(options.authorMatch)[0] : videos[i].info.author.name,
-      album_artist: videos[i].channelTitle,
-      title: videos[i].title.replace(options.titleRemoverMeta, ''),
-      track: `${i + 1}/${videos.length}`,
-      date: (new Date(videos[i].info.published)).getFullYear()
+    ora.start(`Writing Metadata for "${video.metaTitle}"`);
+    const data = {
+      artist: video.mAuthor,
+      album_artist: playlist.sameAuthor ? video.channel.name : 'Various Artists',
+      title: video.metaTitle,
+      track: `${video.position + 1}/${playlist.videos.length}`,
+      date: video.published.getFullYear()
     };
-    data = Object.assign({}, data, options.metadata);
-    const foptions = {};
-    ffmd.write(file, data, foptions, e => {
+    for (const key in options.metadata) { if (options.metadata[key]) data[key] = options.metadata[key]; }
+    ffmd.write(video.path, data, {}, e => {
       if (e) return reject(e);
+      if (options.debug) ora.stop();
+      console.debug('Metadata Write Complete');
+      if (options.debug) ora.start();
       if (options.cover) {
-        const temp = path.join(__dirname, options.output, `${videos[i].title}.temp.${options.format}`);
-        const stream = ffmpeg(file).addOutputOptions(
+        if (options.debug) ora.stop();
+        console.debug('Cover Is Included');
+        if (options.debug) ora.start();
+        const ffstream = ffmpeg(video.path).addOutputOptions(
           '-i', options.cover,
           '-map', '0:0',
           '-map', '1:0',
           '-c', 'copy',
           '-id3v2_version', '3'
-        ).save(temp);
-        stream.on('error', e => { // eslint-disable-line no-shadow
-          reject(e);
-        });
-        stream.on('end', () => {
-          try {
-            fs.unlinkSync(file);
-            fs.renameSync(temp, file);
-          } catch (e) { // eslint-disable-line no-shadow
-            return reject(e);
-          }
+        ).save(video.tempPath);
+        ffstream.on('error', reject.bind(this));
+        ffstream.on('end', () => {
+          if (options.debug) ora.stop();
+          console.debug('Completed Writing Cover');
+          if (options.debug) ora.start();
+          fs.unlinkSync(video.path);
+          fs.renameSync(video.tempPath, video.path);
           return resolve();
         });
-      } else {
-        return resolve();
       }
     });
   });
 }
-(async () => {
-  console.log('ℹ Requesting Playlist Info');
-  let videos;
-  try {
-    videos = await ypi(gapi, options.playlist);
-  } catch (e) {
-    return console.error('✗ Error Requesting Playlist Info', e);
-  }
-  console.log(`ℹ Found ${videos.length} video${videos.length == 1 ? '' : 's'}.`);
-  return download(videos).catch(e => {
-    console.error('✗ Error Downloading Playlist', e);
-  });
-})();
-process.on('unhandledRejection', console.error);
-process.on('exit', onExit.bind(null, { cleanup: true }));
-process.on('SIGINT', onExit.bind(null, { exit: true }));
-process.on('SIGUSR1', onExit.bind(null, { exit: true }));
-process.on('SIGUSR2', onExit.bind(null, { exit: true }));
-process.on('uncaughtException', onExit.bind(null, { exit: true }));
+
+process.on('unhandledRejection', e => {
+  ora.fail(e.stack);
+});
