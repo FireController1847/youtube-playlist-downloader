@@ -15,7 +15,7 @@ const ora = require('ora')({
 });
 const path = require('path');
 const Playlist = require('./structures/Playlist.js');
-const Video = require('./structures/Video.js');
+const Video = require('./structures/Video.js'); // eslint-disable-line no-unused-vars
 const ypi = require('youtube-playlist-info');
 const yt = require('ytdl-core');
 

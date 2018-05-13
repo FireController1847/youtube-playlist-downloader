@@ -17,7 +17,7 @@ if (!fs.existsSync(options.output)) return ora.fail('Your output file has not be
 (async () => {
   ora.start('Loading Files');
   const fileNames = fs.readdirSync(options.output);
-  let files = [];
+  const files = [];
   for (let i = 0; i < fileNames.length; i++) {
     files[i] = [];
     const fPath = path.join(options.output, fileNames[i]);
