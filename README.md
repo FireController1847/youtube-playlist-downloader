@@ -1,4 +1,4 @@
-# YouTube Playlist Downloader
+# YouTube Playlist Downloader [![Build Status](https://travis-ci.org/FireController1847/youtube-playlist-downloader.svg?branch=master)](https://travis-ci.org/FireController1847/youtube-playlist-downloader)
 This module will download YouTube playlists for you! It was just a fun experiment I've done and I keep improving on!
 
 # How to Use
